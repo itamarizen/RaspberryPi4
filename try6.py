@@ -1,9 +1,85 @@
-# import required libraries
+# ---------------------------- imports ----------------------------- #
+import sys,os
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
 
+# add base directory to sys.path
+abspath = os.path.abspath(__file__)
+dname = os.path.dirname(abspath)
+os.chdir(dname)
+# ------------------------------------------------------------------ #
+
+# ---------------------------- globals ----------------------------- #
 A = 1
+# ------------------------------------------------------------------ #
+
+
+# ---------------------------- functios ---------------------------- #
+
+# PREPROCESSING
+def preprocessing(img, ksize = 111):
+    # img = cv2.medianBlur(img,ksize) 
+    # img =  remove_uniform_areas(img)
+    img = cv2.bilateralFilter(img, 5, 75, 75)
+    return img   
+
+def remove_uniform_areas(image):
+    
+    # Calculate the standard deviation of the grayscale image
+    std_dev = np.std(image)
+    
+    # Create a binary mask with the same size as the image
+    mask = np.zeros_like(image)
+    
+    # Find the pixels with a standard deviation greater than the mean
+    mask[image > std_dev] = 255
+    
+    # Apply the mask to the input image
+    masked_image = cv2.bitwise_and(image, image, mask=mask)
+    
+    return masked_image
+
+def histogram_equalization(img):
+    
+    # Calculate histogram
+    hist, bins = np.histogram(img.flatten(), 256, [0,256])
+    
+    # Calculate cumulative distribution function
+    cdf = hist.cumsum()
+    
+    # Normalize cdf
+    cdf_normalized = cdf * float(hist.max()) / cdf.max()
+    
+    # Perform histogram equalization
+    equalized = np.interp(img.flatten(), bins[:-1], cdf_normalized)
+    equalized = equalized.reshape(img.shape).astype(np.uint8)
+    
+    # Calculate histogram of equalized image
+    equalized_hist, equalized_bins = np.histogram(equalized.flatten(), 256, [0,256])
+    
+    # Calculate threshold values using Otsu's method
+    _, low_thresh = cv2.threshold(equalized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    high_thresh = np.max(equalized_hist)
+    low_thresh = np.min(equalized_hist)
+    
+    # Plot histograms and threshold values
+    fig, axs = plt.subplots(1, 2)
+    axs[0].hist(img.flatten(), 256, [0,256], color='b')
+    axs[0].axvline(x=low_thresh, color='r')
+    axs[0].axvline(x=high_thresh, color='r')
+    axs[0].set_title('Original Image Histogram')
+    axs[1].hist(equalized.flatten(), 256, [0,256], color='b')
+    axs[1].axvline(x=low_thresh, color='r')
+    axs[1].axvline(x=high_thresh, color='r')
+    axs[1].set_title('Equalized Image Histogram')
+    
+    # Show images
+    cv2.imshow('Original', img)
+    cv2.imshow('Equalized', equalized)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
 def show_image(image, windoe_name):
     # Create a named window with the WINDOW_AUTOSIZE flag
     cv2.namedWindow(windoe_name, cv2.WINDOW_NORMAL) #cv2.WINDOW_AUTOSIZE
@@ -13,181 +89,111 @@ def show_image(image, windoe_name):
     cv2.imshow(windoe_name, image)
     cv2.waitKey(0)
 
-def preproceesing(imgL, imgR, choice):
-    # Apply selected deep mapping algorithm
-    if choice == '1': # Image smoothing
-        imgL = cv2.GaussianBlur(imgL, (5, 5), 0)
-        imgR = cv2.GaussianBlur(imgR, (5, 5), 0)
-        output = cv2.hconcat([imgL, imgR])
-        output = cv2.resize(output, (640, 240))
-    elif choice == '2': # Image thresholding
-        ret, imgL = cv2.threshold(imgL, 127, 255, cv2.THRESH_BINARY)
-        ret, imgR = cv2.threshold(imgR, 127, 255, cv2.THRESH_BINARY)
-        output = cv2.hconcat([imgL, imgR])
-        output = cv2.resize(output, (640, 240))
-    elif choice == '3': # Blob detection
-        detector = cv2.SimpleBlobDetector_create()
-        keypointsL = detector.detect(imgL)
-        keypointsR = detector.detect(imgR)
-        imgL = cv2.drawKeypoints(imgL, keypointsL, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        imgR = cv2.drawKeypoints(imgR, keypointsR, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        output = cv2.hconcat([imgL, imgR])
-        output = cv2.resize(output, (640, 240))
-    elif choice == '4': # Edge detection
-        imgL = cv2.Canny(imgL, 100, 200)
-        imgR = cv2.Canny(imgR, 100, 200)
-        output = cv2.hconcat([imgL, imgR])
-        output = cv2.resize(output, (640, 240))
-    elif choice == '5': # Image sharpening
-        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-        imgL = cv2.filter2D(imgL, -1, kernel)
-        imgR = cv2.filter2D(imgR, -1, kernel)
-        output = cv2.hconcat([imgL, imgR])
-        output = cv2.resize(output, (640, 240))
-    else:
-        print("Invalid choice, using default (smoothing)...")
-        imgL = cv2.GaussianBlur(imgL, (5, 5), 0)
-        imgR = cv2.GaussianBlur(imgR, (5, 5), 0)
-        output = cv2.hconcat([imgL, imgR])
-        output = cv2.resize(output, (640, 240))
-    return output
+def segment_and_label(disparity_image):
 
-def stereo(imgL, imgR, choice):
-    # Apply selected deep mapping algorithm
-    if choice == '1': # stereo_bm
-        output = stereo_bm(imgL, imgR)
-    elif choice == '2': # stereo_bm_GaussianBlur
-        output = stereo_bm_GaussianBlur(imgL, imgR)
-    elif choice == '3': # stereo_sgbm_wls
-        output = stereo_sgbm_wls(imgL, imgR)
-    elif choice == '4': # stereo_bm_noise_removal
-        output = stereo_bm_noise_removal(imgL, imgR)
-    else:
-        print("Invalid choice, using default (stereo_bm)...")
-        output = stereo_bm(imgL, imgR)
-    return output
-
-def create_3d_mapping_image(imgL, imgR):
-
-    # Find the key points and descriptors in both images using SIFT algorithm
-    #sift = cv2.xfeatures2d.SIFT_create()
-    sift = cv2.ORB_create()
-    kp1, des1 = sift.detectAndCompute(imgL, None)
-    kp2, des2 = sift.detectAndCompute(imgR, None)
-
-    # Match the descriptors in both images
-    matcher = cv2.BFMatcher()
-    matches = matcher.match(des1, des2)
-
-    # Calculate the homography between the two images
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
-    M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-
-    # Use the homography to warp one image onto the other
-    h, w = imgL.shape
-    warped = cv2.warpPerspective(imgL, M, (w, h))
-
-    # Blend the two images to create the 3D mapping output image
-    alpha = 0.5
-    beta = 1.0 - alpha
-    output = cv2.addWeighted(imgR, alpha, warped, beta, 0.0)
-
-    return output
+    # Threshold the disparity image to create a binary image
+    _, binary_image = cv2.threshold(disparity_image, 0, 255, cv2.THRESH_BINARY)
+    binary_image = binary_image.astype(np.uint8)
+    
+    # Perform morphological operations to remove noise and fill in gaps
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+    binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, kernel)
+    binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_CLOSE, kernel)
+    
+    # Perform connected component analysis on the binary image
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_image, connectivity=8, ltype=cv2.CV_32S)
+    
+    # Create an output image for labeling the objects
+    labeled_image = np.zeros_like(disparity_image)
+    
+    # Loop through the labels and draw the outlines of the objects in the output image
+    for i in range(1, num_labels):
+        object_mask = np.where(labels == i, 255, 0).astype(np.uint8)
+        contours, _ = cv2.findContours(object_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(labeled_image, contours, -1, (i*50, i*50, i*50), 2)
+    
+    return labeled_image, num_labels - 1
 
 
-def stereo_bm_GaussianBlur(imgL, imgR, numDisparities=16, blockSize=15):
+def outlining(image):
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+    erosion = cv2.erode(image,kernel,iterations = 1)
+    outlined = cv2.bitwise_xor(erosion,image)
+    return outlined 
 
-    # Compute the disparity map using the block matching algorithm
-    stereo = cv2.StereoBM_create(numDisparities=numDisparities, blockSize=blockSize)
-    disparity = stereo.compute(imgL, imgR)
-
-    # Normalize the disparity map for display purposes
-    normalized_disparity = cv2.normalize(disparity, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-
-    # Apply a Gaussian blur to the normalized disparity map to reduce noise
-    blurred_disparity = cv2.GaussianBlur(normalized_disparity, (5, 5), 0)
-
-    # Return the enhanced depth mapping image
-    return blurred_disparity
-
-
-def stereo_bm(imgL, imgR, numDisparities=16, blockSize=15):
-    # Compute the disparity map using the block matching algorithm
-    stereo = cv2.StereoBM_create(numDisparities=numDisparities, blockSize=blockSize)
-    disparity = stereo.compute(imgL, imgR)
-
-    # Return the disparity map
-    return disparity
-
-
-def stereo_sgbm_wls(imgL, imgR, numDisparities=16, blockSize=15, lmbda=80000, sigma=1.2):
-
-    # Compute the disparity map using the block matching algorithm
-    stereo = cv2.StereoSGBM_create(minDisparity=0, numDisparities=numDisparities, blockSize=blockSize)
-    disparity = stereo.compute(imgL, imgR)
-
-    # Apply a weighted least-squares filter to the disparity map
-    filter = cv2.ximgproc.createDisparityWLSFilter(stereo)
-    filter.setLambda(lmbda)
-    filter.setSigmaColor(sigma)
-    filtered_disparity = filter.filter(disparity, imgL, None, imgR)
-
-    # Return the filtered disparity map
-    return filtered_disparity
+def labeling(img):
+    # global thresholding
+    ret1,th1 = cv2.threshold(img,127,255,cv2.THRESH_BINARY)
+    # Otsu's thresholding
+    ret2,th2 = cv2.threshold(img.astype(np.uint8),0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    # Otsu's thresholding after Gaussian filtering
+    blur = cv2.GaussianBlur(img,(5,5),0)
+    ret3,th3 = cv2.threshold(blur.astype(np.uint8),0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    # plot all the images and their histograms
+    images = [img, 0, th1,
+            img, 0, th2,
+            blur, 0, th3]
+    titles = ['Original Noisy Image','Histogram','Global Thresholding (v=127)',
+            'Original Noisy Image','Histogram',"Otsu's Thresholding",
+            'Gaussian filtered Image','Histogram',"Otsu's Thresholding"]
+    for i in range(3):
+        plt.subplot(3,3,i*3+1),plt.imshow(images[i*3],'gray')
+        plt.title(titles[i*3]), plt.xticks([]), plt.yticks([])
+        plt.subplot(3,3,i*3+2),plt.hist(images[i*3].ravel(),256)
+        plt.title(titles[i*3+1]), plt.xticks([]), plt.yticks([])
+        plt.subplot(3,3,i*3+3),plt.imshow(images[i*3+2],'gray')
+        plt.title(titles[i*3+2]), plt.xticks([]), plt.yticks([])
+    plt.show()
+# ------------------------------------------------------------------ #
 
 
-def stereo_bm_noise_removal(imgL, imgR, numDisparities=16, blockSize=15, filterType="median"):
-
-    # Compute the disparity map using the block matching algorithm
-    stereo = cv2.StereoBM_create(numDisparities=numDisparities, blockSize=blockSize)
-    disparity = stereo.compute(imgL, imgR)
-
-    # Remove noise from the disparity map using a filter
-    if filterType == "median":
-        filtered_disparity = cv2.medianBlur(disparity, 3)
-    elif filterType == "bilateral":
-        filtered_disparity = cv2.bilateralFilter(disparity, 5, 75, 75)
-    else:
-        filtered_disparity = disparity
-
-    # Return the filtered disparity map
-    return filtered_disparity
-
-
+# ---------------------- script start here ------------------------- #
 if (A==1):
     # read two input images as grayscale images
-    imgL = cv2.imread('L.png',0)
-    imgR = cv2.imread('R.png',0)
-    # show_image(imgL,'L.png')
-    # show_image(imgR,'R.png')
-
-    # Initiate and StereoBM object
-    stereo = cv2.StereoSGBM_create(numDisparities=16, blockSize=25)
-
-    # compute the disparity map
-    disparity = stereo.compute(imgL,imgR)
-    plt.subplot(131), plt.imshow(imgL, cmap = "gray"),plt.axis('off')
-    plt.subplot(132), plt.imshow(imgR, cmap = "gray"),plt.axis('off')
-    plt.subplot(133), plt.imshow(disparity, cmap = "gray"),plt.axis('off')
-    plt.imshow(disparity,'gray')
-    plt.show()
-    disparity.shape
+    imgL = cv2.imread('./images/L.png',cv2.IMREAD_GRAYSCALE)
+    imgL_prepro = preprocessing(imgL)
+    #imgL_equalized = histogram_equalization(imgL)
+    imgR = cv2.imread('./images/R.png',cv2.IMREAD_GRAYSCALE)
+    imgR_prepro = preprocessing(imgR)
+    #imgR_equalized = histogram_equalization(imgR)
 
 if (A==2):
     # read two input images
     imgL = cv2.imread('aloeL.jpg',0)
     imgR = cv2.imread('aloeR.jpg',0)
-    show_image(imgL,'aloeL.jpg')
-    show_image(imgR,'aloeR.jpg')
 
-    # Initiate and StereoBM object
-    stereo = cv2.StereoBM_create(numDisparities=128, blockSize=15)
 
-    # compute the disparity map
-    disparity = stereo.compute(imgL,imgR)
-    disparity1 = stereo.compute(imgR,imgL)
-    plt.subplot(131), plt.imshow(imgL, cmap = "gray"),plt.axis('off')
-    plt.subplot(132), plt.imshow(imgR, cmap = "gray"),plt.axis('off')
-    plt.subplot(133), plt.imshow(disparity, cmap = "gray"),plt.axis('off')
-    plt.show()
+stereo = cv2.StereoBM_create(numDisparities=16, blockSize=25)
+stereo_prepro = cv2.StereoBM_create(numDisparities=16, blockSize=25)
+#stereo_equalized = cv2.StereoBM_create(numDisparities=16, blockSize=25)
+
+# compute the disparity map
+disparity = stereo.compute(imgL,imgR)
+disparity_prepro = stereo_prepro.compute(imgL_prepro,imgR_prepro)
+labeled_image = outlining(disparity)
+labeled_image = labeling(disparity)
+show_image(labeled_image,'Labeled Image')
+#disparity_equalized = stereo_prepro.compute(imgL_equalized,imgR_equalized)
+plt.subplot(231), plt.imshow(imgL, cmap = "gray"),plt.axis('off')
+plt.subplot(232), plt.imshow(imgR, cmap = "gray"),plt.axis('off')
+plt.subplot(233), plt.imshow(disparity, cmap = "gray"),plt.axis('off'),plt.title("normal")
+plt.subplot(234), plt.imshow(disparity_prepro, cmap = "gray"),plt.axis('off'),plt.title("prepro")
+plt.subplot(235), plt.imshow(segment_and_label(labeled_image), cmap = "gray"),plt.axis('off'),plt.title("equalized")
+#plt.subplot(235), plt.imshow(disparity_equalized, cmap = "gray"),plt.axis('off'),plt.title("equalized")
+plt.imshow(disparity,'gray')
+plt.show()
+disparity.shape
+
+
+# for aloe 
+# # Initiate and StereoBM object
+# stereo = cv2.StereoBM_create(numDisparities=128, blockSize=15)
+
+# # compute the disparity map
+# disparity = stereo.compute(imgL,imgR)
+# #disparity1 = stereo.compute(imgR,imgL)
+# plt.imshow(disparity,'gray')
+# plt.show()
+
+
+
