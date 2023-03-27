@@ -1,7 +1,7 @@
 # RaspberryPi4
 This Raspberry Pi 4 repository aims to serve as a wheelchair obstacle avoidance system.
 
-# DOTO - edit the blow
+# DOTO - edit the below
 
 Overview: Provide a brief overview of the project and its goals, such as creating a system that uses Raspberry Pi 4 to help people with mobility impairments navigate through obstacles.
 
