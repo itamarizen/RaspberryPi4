@@ -36,9 +36,6 @@ def find_matching_points(imgL, imgR):
     show_image(matches,"sx")                
     return matches
 
-  
- 
-
 
 def preproceesing(imgL, imgR, choice):
     # Apply selected deep mapping algorithm
