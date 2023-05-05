@@ -5,7 +5,14 @@ The project aims to help people with visual disabilities navigate their environm
 To run the project, you need to have Python 3 installed. You can clone the repository and install the required packages by running the following command in your terminal: pip install -r requirements.txt
 
 # Usage
-The project flow is implemented in StereoVision.py. The following is the flow of the project:
+The project flow is implemented in StereoVision.py. 
+
+# Flow chart
+
+The following is the flow of the project:
+
+![Flow chart](flow_chart.png)
+
 
 1. Calibration - This step is performed only once to calibrate the left and right cameras.
 
