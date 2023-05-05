@@ -3,7 +3,9 @@ import sys,os
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks,gaussian
+from skimage.measure import regionprops
+from scipy.ndimage import label, find_objects
 
 # add base directory to sys.path
 abspath = os.path.abspath(__file__)
@@ -18,55 +20,47 @@ filter = None
 # ------------------------------------------------------------------ #
 
 # ---------------------------- functios ---------------------------- #
-def preprocessing(img, ksize=11, filter=None):
-    if filter == 'median':
-        img = cv2.medianBlur(img, ksize)
-    elif filter == 'bilateral':
-        img = cv2.bilateralFilter(img, 9, 75, 75)
-    elif filter == 'gaussian':
-        img = cv2.GaussianBlur(img, (5, 5), 0)
-    elif filter == 'mean':
-        img = cv2.blur(img, (5, 5))
-    elif filter == 'sobel':
-        img = cv2.Sobel(img, cv2.CV_8U, 1, 1, ksize=3)
-    elif filter == 'laplacian':
-        img = cv2.Laplacian(img, cv2.CV_8U, ksize=3)
-    elif filter == 'canny':
-        sigma = 0.3 # 30 % up&down
-        median = np.median(img)
-        lower = int(min(0,(1.0 - sigma) * median))
-        upper = int(max(255,(1.0 + sigma) * median))
-        img = cv2.Canny(img, lower, upper)
-    elif filter == 'threshold':
-        _, img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
-    elif filter == 'adaptive_threshold':
-        img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-    elif filter == 'otsu':
-        _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    elif filter == 'erode':
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        img = cv2.erode(img, kernel, iterations=1)
-    elif filter == 'dilate':
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        img = cv2.dilate(img, kernel, iterations=1)
-    elif filter == 'opening':
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
-    elif filter == 'closing':
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
-    elif filter == 'tophat':
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        img = cv2.morphologyEx(img, cv2.MORPH_TOPHAT, kernel)
-    elif filter == 'blackhat':
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        img = cv2.morphologyEx(img, cv2.MORPH_BLACKHAT, kernel)
-    else:
-        raise ValueError('Invalid filter')
-    
-    return img
+def preprocessing(image, filters=None, ksize=3, alpha=1.0, beta=0.0, gamma=0.0, display=False):
+    filtered_img = image.copy()
 
-def get_corespondence_matching(img1,img2,display = False):
+    if filters is not None:
+        for filter in filters:
+            if filter == 'gaussian':
+                filtered_img = cv2.GaussianBlur(filtered_img, (ksize, ksize), cv2.BORDER_DEFAULT)
+            elif filter == 'median':
+                filtered_img = cv2.medianBlur(filtered_img, ksize, cv2.BORDER_DEFAULT)
+            elif filter == 'bilateral':
+                filtered_img = cv2.bilateralFilter(filtered_img, ksize, 75, 75, cv2.BORDER_DEFAULT)
+            elif filter == 'box':
+                filtered_img = cv2.boxFilter(filtered_img, -1, (ksize, ksize), normalize=True, borderType=cv2.BORDER_DEFAULT)
+            elif filter == 'sobelx':
+                filtered_img = cv2.Sobel(filtered_img, cv2.CV_64F, 1, 0, ksize=ksize)
+            elif filter == 'sobely':
+                filtered_img = cv2.Sobel(filtered_img, cv2.CV_64F, 0, 1, ksize=ksize)
+            elif filter == 'laplacian':
+                filtered_img = cv2.Laplacian(filtered_img, cv2.CV_64F, ksize=ksize)
+            elif filter == 'edge_enhance':
+                kernel = np.array([[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]])
+                filtered_img = cv2.filter2D(filtered_img, -1, kernel)
+            elif filter == 'sharpen':
+                kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+                filtered_img = cv2.filter2D(filtered_img, -1, kernel)
+            elif filter == 'contrast':
+                filtered_img = cv2.convertScaleAbs(filtered_img, alpha=alpha, beta=beta)
+            elif filter == 'brightness':
+                filtered_img = cv2.convertScaleAbs(filtered_img, alpha=1.0, beta=gamma)
+            else:
+                raise ValueError('Invalid filter type')
+
+    if display:
+        plt.figure()
+        plt.imshow(filtered_img, cmap='gray');plt.axis('off')
+        plt.title(f"{filters} filter, ksize={ksize}")
+        plt.show(block=False)
+
+    return filtered_img
+
+def get_correspondence_matching(img1,img2,display = False):
     # Initiate SIFT detector
     sift = cv2.SIFT_create()
     # find the keypoints and descriptors with SIFT
@@ -75,10 +69,11 @@ def get_corespondence_matching(img1,img2,display = False):
 
     if(display):
         # Visualize keypoints
-        imgSift = cv2.drawKeypoints(
-            img1, kp1, None)
-        # cv2.imshow("SIFT Keypoints", imgSift)
-        plt.imshow(imgSift, cmap = "gray"),plt.axis('off'),plt.title("Visualize keypoints of Scale-Invariant Feature Transform")
+        imgSift = cv2.drawKeypoints(img1, kp1, None)
+        # Show the figure
+        plt.figure()
+        plt.imshow(imgSift,cmap='tab20b');plt.title("Visualize keypoints of Scale-Invariant Feature Transform");plt.axis('off')
+        plt.show(block=False)        
 
     # Match keypoints in both images
     # Based on: https://docs.opencv2.org/master/dc/dc3/tutorial_py_matcher.html
@@ -115,10 +110,9 @@ def get_corespondence_matching(img1,img2,display = False):
         img1, kp1, img2, kp2, matches[300:1700], None, **draw_params)
     
     if(display):
+        plt.figure()
         plt.imshow(keypoint_matches, cmap = "gray"),plt.axis('off'),plt.title("keypoint_matches")
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
+        plt.show(block=False)
 
     return pts1,pts2
 
@@ -170,11 +164,11 @@ def stereo_rectification(img1, img2,pts1,pts2,display = False):
     lines2 = lines2.reshape(-1, 3)
     img3, img4 = drawlines(img2, img1, lines2, pts2, pts1)
     if(display):
+        plt.figure()
         plt.subplot(121), plt.imshow(img5)
         plt.subplot(122), plt.imshow(img3)
         plt.suptitle("Epilines in both images")
-        plt.show()
-
+        plt.show(block=False)
 
     # Stereo rectification (uncalibrated variant)
     # Adapted from: https://stackoverflow.com/a/62607343
@@ -199,9 +193,7 @@ def stereo_rectification(img1, img2,pts1,pts2,display = False):
         axes[0].axhline(450)
         axes[1].axhline(450)
         plt.suptitle("Rectified images")
-        plt.show()
-        cv2.waitKey()
-        cv2.destroyAllWindows()
+        plt.show(block=False)
 
     return img1_rectified,img2_rectified
 
@@ -214,7 +206,7 @@ def get_disparity(img1_rectified,img2_rectified,display = False):
     # https://docs.opencv2.org/4.5.0/d2/d85/classcv2_1_1StereoSGBM.html
 
     # Matched block size. It must be an odd number >=1 . Normally, it should be somewhere in the 3..11 range.
-    block_size = 11
+    block_size = 5
     min_disp = -128
     max_disp = 128
     # Maximum disparity minus minimum disparity. The value is always greater than zero.
@@ -222,10 +214,10 @@ def get_disparity(img1_rectified,img2_rectified,display = False):
     num_disp = max_disp - min_disp
     # Margin in percentage by which the best (minimum) computed cost function value should "win" the second best value to consider the found match correct.
     # Normally, a value within the 5-15 range is good enough
-    uniquenessRatio = 5
+    uniquenessRatio = 10
     # Maximum size of smooth disparity regions to consider their noise speckles and invalidate.
     # Set it to 0 to disable speckle filtering. Otherwise, set it somewhere in the 50-200 range.
-    speckleWindowSize = 50
+    speckleWindowSize = 100
     # Maximum disparity variation within each connected component.
     # If you do speckle filtering, set the parameter to a positive value, it will be implicitly multiplied by 16.
     # Normally, 1 or 2 is good enough.
@@ -248,17 +240,123 @@ def get_disparity(img1_rectified,img2_rectified,display = False):
     # Normalize the values to a range from 0..255 for a grayscale image
     disparity_SGBM = cv2.normalize(disparity_SGBM, disparity_SGBM, alpha=255,
                                 beta=0, norm_type=cv2.NORM_MINMAX,dtype=cv2.CV_8U)
-    if(display):
-        plt.imshow(disparity_SGBM, cmap='gray');plt.suptitle("disparity_SGBM")
-        plt.show()
-        cv2.waitKey()
-        cv2.destroyAllWindows()
+    if display:
+        fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(10, 5), gridspec_kw={'width_ratios': [1, 2]})
+        im = ax2.imshow(disparity_SGBM, cmap='gray')
+        fig.colorbar(im, ax=ax2)
+        ax2.set_title("disparity_SGBM")
+        ax2.axis('off')
+        ax1.plot([], [], label=f"block_size={block_size}")
+        ax1.plot([], [], label=f"num_disp={num_disp}")
+        ax1.plot([], [], label=f"uniquenessRatio={uniquenessRatio}")
+        ax1.plot([], [], label=f"speckleWindowSize={speckleWindowSize}")
+        ax1.legend(loc='center left')
+        ax1.axis('off')
+        plt.show(block=False)
     
     return disparity_SGBM
 
+def enhance_disparity(disparity, display=False):
+    # Define the kernel size for the weighted median filter
+    kernel_size = 5
+
+    # Compute the weights for each pixel in the local neighborhood
+    weights = np.exp(-np.square(disparity - np.median(disparity))/kernel_size)
+
+    # Apply the weighted median filter to the disparity map
+    filtered_disparity = cv2.medianBlur(disparity, kernel_size, weights)
+
+    # Step 1: Outlier detection
+    min_disparity = -128
+    max_disparity = 128
+    weights = np.exp(-np.square(filtered_disparity - np.median(filtered_disparity))/kernel_size)
+    filtered_disparity[filtered_disparity < min_disparity] = min_disparity
+    filtered_disparity[filtered_disparity > max_disparity] = max_disparity
+
+    # Step 2: Occlusion handling
+    occlusion_mask = np.zeros_like(filtered_disparity)
+    occlusion_mask[filtered_disparity == min_disparity] = 1
+    occlusion_mask[filtered_disparity == max_disparity] = 1
+    median_disparity = np.median(filtered_disparity)
+    filtered_disparity[occlusion_mask == 1] = median_disparity
+
+    # Step 3: Disparity edges refinement
+    filtered_disparity = cv2.medianBlur(filtered_disparity, 5)
+    filtered_disparity = cv2.bilateralFilter(filtered_disparity, 9, 75, 75)
+
+    # Step 4: Uniform areas handling
+    filtered_disparity = cv2.filter2D(filtered_disparity, -1, np.ones((5,5))/25)
+
+    if display:
+        # Display the final disparity map
+        plt.figure()
+        plt.imshow(filtered_disparity,cmap="gray"),plt.axis('off'),plt.title("Enhanced Disparity Map")
+        plt.show(block=False)  
+
+    return filtered_disparity
+
+def extract_closest_objects_3(disparity, display=False):
+    # Compute the histogram of the disparity values
+    histogram, bins = np.histogram(disparity, bins=256, density=True)
+
+    # Remove total black (background)
+    histogram[0] = 0
+    
+    # Use peakutils to extract the peaks of the histogram
+    from peakutils.peak import indexes
+    prominence = np.max(histogram) * 0.05
+    distance = 5
+    peak_indices = indexes(histogram, thres=prominence, min_dist=distance)
+
+    if display:
+        plt.figure()
+        plt.subplot(1, 2, 1)
+        plt.plot(histogram)
+        plt.title("Histogram")
+        plt.subplot(1, 2, 2)
+        plt.plot(peak_indices, histogram[peak_indices], "xr")
+        plt.plot(histogram)
+        plt.legend(['Peaks'])
+        plt.title("Analyzed Histogram")
+        plt.suptitle("Histogram Analysis")
+        plt.show(block=False)
+
+    # Use regionprops to extract the objects corresponding to each peak in the histogram
+    objects = []
+    for i, peak_index in enumerate(peak_indices[::-1]):
+        # Define the minimum and maximum disparity values for the current object
+        min_val, max_val = peak_index - distance, peak_index + distance
+
+        # Extract the current object using thresholding and connected component analysis
+        obj = cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+        obj[(disparity < min_val) | (disparity > max_val)] = 0
+        thresh = cv2.threshold(obj, 0, 255, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)[1]
+        labels = label(thresh.astype(np.uint8))
+        num_labels = np.max(labels)
+
+        # Extract the regions corresponding to the current object
+        for j in range(1, num_labels+1):
+            mask = (labels == j).astype(np.uint8)
+            props = regionprops(mask, intensity_image=obj)
+            if len(props) == 0:
+                continue
+            # Choose the region with the highest mean intensity as the object
+            max_mean_intensity_region = max(props, key=lambda x: x.mean_intensity)
+            mask = max_mean_intensity_region.filled_image
+            objects.append(mask)
+
+        # Display the segmented object
+        if display:
+            plt.figure()
+            plt.imshow(obj, cmap='gray')
+            plt.title(f'Object {i+1}')
+            plt.show(block=False)
+
+    return objects
+
 def extract_closest_objects(disparity, display=False):
     # Compute the histogram of the disparity values
-    histogram, bins = np.histogram(disparity, bins=256,normed=True)
+    histogram, bins = np.histogram(disparity, bins=256,density=True)
     
     # remove total black (backgraund)
     histogram[0] = 0
@@ -273,14 +371,167 @@ def extract_closest_objects(disparity, display=False):
 
     threshold: This parameter controls the minimum absolute height of a peak. A larger value will result in fewer peaks being detected, while a smaller value will detect more peaks. A good starting point could be to set threshold to a fraction of the maximum histogram value, such as threshold = histogram.max() // 50.
     '''
-    plateau_size = 1
-    height = np.max(histogram) * 0.1
-    threshold = None
-    distance = 5
-    prominence = np.max(histogram) * 0.05
-    width = None
-    peaks, _ = find_peaks(histogram,plateau_size=plateau_size,height=height,threshold=threshold, distance=distance,prominence=prominence,width=width)
+    if not isinstance(disparity, np.ndarray):
+        raise TypeError("Input must be a NumPy array.")
+        
+    # Compute the histogram of the disparity values
+    hist, bins = np.histogram(disparity, bins=256, density=True)
     
+    # Remove total black (background)
+    hist[0] = 0
+    
+    # Determine peak locations in the histogram
+    peak_kwargs = {
+        'plateau_size': 1,
+        'height': np.max(hist) * 0.1,
+        'threshold': None,
+        'distance': len(bins) // 20,
+        'prominence': np.max(hist) * 0.05,
+        'width': len(bins) // 50
+    }
+    peaks, _ = find_peaks(hist, **peak_kwargs)
+    
+    if len(peaks) == 0:
+        raise ValueError("No peaks found in histogram.")
+    
+    # Use regionprops to extract the objects corresponding to each peak in the histogram
+    objects = []
+    for i, peak in enumerate(reversed(peaks)):
+        # Define the minimum and maximum disparity values for the current object
+        min_val, max_val = peak - peak_kwargs['distance'], peak + peak_kwargs['distance']
+        
+        # Extract the current object using thresholding and connected component analysis
+        obj = cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+        obj[(disparity < min_val) | (disparity > max_val)] = 0
+        ret, thresh = cv2.threshold(obj, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        labels, num_labels = label(thresh.astype(np.uint8))
+        
+        if num_labels == 0:
+            raise ValueError(f"No objects detected for peak {peak}.")
+        
+        # Extract the regions corresponding to the current object
+        for j in range(1, num_labels + 1):
+            mask = (labels == j).astype(np.uint8)
+            props = regionprops(mask, intensity_image=obj)
+            if len(props) == 0:
+                continue
+            # Choose the region with the highest mean intensity as the object
+            max_mean_intensity_region = max(props, key=lambda x: x.mean_intensity)
+            mask = max_mean_intensity_region.filled_image
+            objects.append(mask)
+        # Display the segmented object
+        if display:
+            plt.imshow(obj, cmap='gray')
+            plt.title(f'Object {i+1}')
+            plt.show(block=False)
+
+    # if display:
+    #     plt.subplot(1, 2, 1)
+    #     plt.plot(histogram);plt.title("histogram")
+    #     plt.subplot(1, 2, 2)
+    #     plt.plot(peaks, histogram[peaks], "xr"); plt.plot(histogram); plt.legend(['peaks']);plt.title("analyzed histogram")
+    #     plt.axhline(height, linestyle="--", color="gray")
+    #     # Plot vertical lines at the midpoint between adjacent peaks
+    #     colors = ['red', 'green', 'blue', 'purple', 'orange', 'yellow', 'pink', 'brown', 'gray', 'teal']
+    #     for i in range(len(peaks)):
+    #         color = colors[i % len(colors)]
+    #         plt.axvline(peaks[i] - distance, linestyle="--", color=color)
+    #         plt.axvline(peaks[i] + distance, linestyle="--", color=color)
+    #     plt.suptitle("Histogram analysis")
+    #     plt.show(block=False)
+
+
+    # # Use regionprops to extract the objects corresponding to each peak in the histogram
+    # objects = []
+    # for i in range(len(peaks)):
+    #     # Define the minimum and maximum disparity values for the current object
+    #     min_val, max_val = peaks[-1-i] - distance, peaks[-1-i] + distance
+
+    #     # Extract the current object using thresholding and connected component analysis
+    #     obj = cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+    #     obj[(disparity < min_val) | (disparity > max_val)] = 0
+    #     ret, thresh = cv2.threshold(obj, 0, 255, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    #     labels = label(thresh.astype(np.uint8))
+    #     num_labels = np.max(labels)
+
+    #     # Extract the regions corresponding to the current object
+    #     for j in range(1, num_labels+1):
+    #         mask = (labels == j).astype(np.uint8)
+    #         props = regionprops(mask, intensity_image=obj)
+    #         if len(props) == 0:
+    #             continue
+    #         # Choose the region with the highest mean intensity as the object
+    #         max_mean_intensity_region = max(props, key=lambda x: x.mean_intensity)
+    #         mask = max_mean_intensity_region.filled_image
+    #         objects.append(mask)
+                
+    #     # Display the segmented object
+    #     if display:
+    #         plt.figure()
+    #         plt.imshow(obj, cmap='gray')
+    #         plt.title(f'Object {i+1}')
+    #         plt.show(block=False)
+
+    # return objects
+def read_images(pathL,pathR,display = False):
+    imgL = cv2.imread(pathL,cv2.IMREAD_GRAYSCALE)
+    imgR = cv2.imread(pathR,cv2.IMREAD_GRAYSCALE)
+    if (display):
+        plt.figure()
+        plt.subplot(1, 2, 1)
+        plt.imshow(imgL,cmap="gray");plt.title("imgL");plt.axis('off')
+        plt.subplot(1, 2, 2)
+        plt.imshow(imgR,cmap="gray");plt.title("imgR");plt.axis('off')
+        plt.suptitle("input images")
+        plt.show(block=False)        
+    return imgL,imgR
+
+
+def main():
+    # ---------------------- script start here ------------------------- #
+
+    imgL,imgR = read_images(pathL = './images/ruppinL.jpg', pathR = './images/ruppinR.jpg',display=False)
+
+    imgL_filtered = preprocessing(imgL,filters=['median'],ksize=5,display=False)
+    imgR_filtered = preprocessing(imgR, filters=['gaussian'],ksize=5,display=False)
+
+
+    pts1,pts2 = get_correspondence_matching(imgL,imgR,display=False)
+    pts1,pts2 = get_correspondence_matching(imgL_filtered,imgR_filtered,display=False)
+
+    imgL_rectified,imgR_rectified = stereo_rectification(imgL,imgR,pts1,pts2,display=False)
+    imgL_rectified_filtered,imgR_rectified_filtered = stereo_rectification(imgL_filtered,imgR_filtered,pts1,pts2,display=False)
+    
+
+    disparity = get_disparity(imgL_rectified,imgR_rectified,display=False)
+    disparity_filtered = get_disparity(imgL_rectified_filtered,imgR_rectified_filtered,display=False)
+
+    disparity_enhanced = enhance_disparity(disparity,display = False)
+
+    eco = extract_closest_objects_3(disparity,display = True)
+    eco_filtered = extract_closest_objects(disparity_filtered,display = True)
+
+
+if __name__ == '__main__':
+    main()
+    cv2.destroyAllWindows()
+
+
+    '''
+        imgR_filtered = preprocessing(imgR, filters=['gaussian','median','bilateral','box','sobelx',
+                                                 'sobely','laplacian','edge_enhance','sharpen','contrast','brightness']
+                                                 ,ksize=5, alpha=1.5, beta=0, gamma=50, display=True)
+
+
+        # # display differences 
+        # plt.figure()
+        # plt.subplot(121), plt.imshow(img5)
+        # plt.subplot(122), plt.imshow(img3)
+        # plt.imshow(imgL_rectified-imgL_rectified_filtered,cmap='gray')
+        # plt.suptitle("filtered VS non-filtered images results")
+        # plt.show(block=False)
+
+
     if display:
         plt.subplot(1, 2, 1)
         plt.plot(histogram);plt.title("histogram")
@@ -294,60 +545,6 @@ def extract_closest_objects(disparity, display=False):
             plt.axvline(peaks[i] - distance, linestyle="--", color=color)
             plt.axvline(peaks[i] + distance, linestyle="--", color=color)
         plt.suptitle("Histogram analysis")
-        plt.show()
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        plt.show(block=False)
+    '''
 
-        kernel = np.ones((5,5),np.uint8)
-        for i in range(len(peaks)):
-            min_val, max_val = peaks[-1-i]-(distance), peaks[-1-i]+(distance)
-            obj = cv2.normalize(cv2.threshold(disparity, min_val, max_val, cv2.THRESH_TOZERO)[1], None, 0, 255, cv2.NORM_MINMAX)
-            obj[(disparity < min_val) | (disparity > max_val)] = 0
-            closing = cv2.morphologyEx(obj, cv2.MORPH_CLOSE, kernel)
-            opening = cv2.morphologyEx(obj, cv2.MORPH_OPEN, kernel)
-            dilation = cv2.dilate(obj,kernel,iterations = 1)
-            # Create a figure with three columns and one row
-            fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(15, 15))
-
-            # Display the original image in the first subplot
-            axs[0,0].imshow(obj, cmap='gray')
-            axs[0,0].set_title(f'Object {i+1} - Non operated')
-
-            # Display the closing image in the second subplot
-            axs[0,1].imshow(closing, cmap='gray')
-            axs[0,1].set_title(f'Object {i+1} - Closing')
-
-            # Display the opening image in the third subplot
-            axs[1,0].imshow(opening, cmap='gray')
-            axs[1,0].set_title(f'Object {i+1} - Opening')
-
-            # Display the dilation image in the fourth subplot
-            axs[1,1].imshow(dilation, cmap='gray')
-            axs[1,1].set_title(f'Object {i+1} - Dilation')
-
-            # Show the figure
-            plt.show()        
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-
-
-def main():
-    # ---------------------- script start here ------------------------- #
-
-    imgL = cv2.imread('./images/L.png',cv2.IMREAD_GRAYSCALE)
-    imgR = cv2.imread('./images/R.png',cv2.IMREAD_GRAYSCALE)
-
-    # imgL_filtered = preprocessing(imgL,filter='median',display=True)
-    # imgR_filtered = preprocessing(imgR, filter='gaussian',display=True)
-
-    pts1,pts2 = get_corespondence_matching(imgL,imgR,display=True)
-
-    imgL_rectified,imgR_rectified = stereo_rectification(imgL,imgR,pts1,pts2,display=False)
-    
-    disparity = get_disparity(imgL_rectified,imgR_rectified,display=False)
-
-    eco = extract_closest_objects(disparity,display = True)
-
-
-if __name__ == '__main__':
-    main()
