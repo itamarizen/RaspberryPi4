@@ -1,20 +1,34 @@
-# RaspberryPi4
-This Raspberry Pi 4 repository aims to serve as a wheelchair obstacle avoidance system.
+# Project Name
+The project aims to help people with visual disabilities navigate their environment more easily and safely. People with visual disabilities often face significant challenges when it comes to mobility and independence such as crossing pavements and navigating through obstacles. This project provides a solution that can assist them in their daily lives.
 
-# DOTO - edit the below
+# Installation
+To run the project, you need to have Python 3 installed. You can clone the repository and install the required packages by running the following command in your terminal: pip install -r requirements.txt
 
-Overview: Provide a brief overview of the project and its goals, such as creating a system that uses Raspberry Pi 4 to help people with mobility impairments navigate through obstacles.
+# Usage
+The project flow is implemented in StereoVision.py. The following is the flow of the project:
 
-Features: List the key features of the project, such as using sensors to detect obstacles and transmitting data to the wheelchair's control system.
+1. Calibration - This step is performed only once to calibrate the left and right cameras.
 
-Hardware requirements: Describe the hardware required for the project, such as Raspberry Pi 4, sensors, motors, and other components.
+2. Object - In this step, an object is placed in front of the cameras.
 
-Software requirements: List the software required for the project, such as Python, OpenCV, and other libraries.
+3. Left Camera Capture, Right Camera Capture - The left and right camera frames are captured.
 
-Installation instructions: Provide step-by-step instructions for installing and setting up the system, including wiring the components and installing the required software.
+4. Preprocessing - Preprocessing is done to remove noise and correct lens distortion.
 
-Usage instructions: Explain how to use the system, such as turning it on, calibrating the sensors, and controlling the wheelchair.
+5. Feature Extraction - Feature extraction is performed by rectifying stereo images and performing correspondence matching.
 
-Contributions: Encourage others to contribute to the project by listing any areas where help is needed, such as improving the obstacle detection algorithm or adding new features.
+6. Disparity Estimation - Disparity estimation is done to find the difference between the left and right camera frames.
 
-License: Choose a license for the project and include it in the repository, so others know how they can use and modify the code.
+7. Object Extraction - Object extraction is performed to extract the object from the frames.
+
+8. Distance Measurements - Distance measurements are calculated based on the disparity estimation.
+
+9. Alert Accordingly - An alert is raised based on the distance measurements. If the object is too close, an alert is raised to notify the user.
+
+10. Repeat Capturing - The process is repeated to capture new frames continuously.
+
+# Contributors
+The project was created by [Your Name]. If you would like to contribute to the project, please feel free to submit a pull request.
+
+# License
+This project is licensed under the [License Name] license. See the LICENSE file for more details.
